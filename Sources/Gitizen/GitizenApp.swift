@@ -115,14 +115,23 @@ struct ContentView: View {
                 .foregroundStyle(.tertiary)
                 .help("Stop watching")
             }
-            ForEach(state?.new ?? []) { item in
+            ForEach(state?.items ?? []) { item in
+                let isNew = state?.isNew(item) ?? false
                 Button {
                     openURL(item.url)
                 } label: {
                     Label {
-                        Text("#\(item.number) \(item.title)")
-                            .lineLimit(1)
-                            .truncationMode(.tail)
+                        HStack(spacing: 4) {
+                            Text("#\(item.number) \(item.title)")
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .foregroundStyle(isNew ? .primary : .secondary)
+                            if isNew {
+                                Circle()
+                                    .fill(.blue)
+                                    .frame(width: 6, height: 6)
+                            }
+                        }
                     } icon: {
                         Image(systemName: item.isPR ? "arrow.triangle.pull" : "smallcircle.filled.circle")
                             .foregroundStyle(item.isPR ? .purple : .green)

@@ -31,37 +31,55 @@ import Testing
             pullRequest: pr ? .init() : nil)
     }
 
-    @Test func picksUpOnlyNewerItems() {
+    @Test func listsAllOpenPullsButOnlyNewIssues() {
         var state = RepoState(seenNumber: 10, seenStars: 5, stars: 5)
-        state.update(stars: 7, openIssues: [issue(12, pr: true), issue(11), issue(10), issue(3)])
-        #expect(state.new.map(\.number) == [12, 11])
-        #expect(state.new.map(\.isPR) == [true, false])
+        state.update(
+            stars: 7,
+            openPulls: [issue(12), issue(5)],
+            openIssues: [issue(12, pr: true), issue(11), issue(9), issue(5, pr: true)])
+        #expect(state.items.map(\.number) == [12, 11, 5])
+        #expect(state.items.map(\.isPR) == [true, false, true])
+        #expect(state.items.map(state.isNew) == [true, true, false])
         #expect(state.newStars == 2)
         #expect(state.newCount == 4)
     }
 
     @Test func dropsItemsThatAreNoLongerOpen() {
         var state = RepoState(seenNumber: 10, seenStars: 0, stars: 0)
-        state.update(stars: 0, openIssues: [issue(13), issue(12), issue(11)])
-        state.update(stars: 0, openIssues: [issue(14), issue(12)])
-        #expect(state.new.map(\.number) == [14, 12])
+        state.update(stars: 0, openPulls: [issue(13), issue(4)], openIssues: [issue(12), issue(11)])
+        state.update(stars: 0, openPulls: [issue(4)], openIssues: [issue(14), issue(12)])
+        #expect(state.items.map(\.number) == [14, 12, 4])
     }
 
-    @Test func markSeenResetsBaseline() {
+    @Test func markSeenKeepsPullsAndClearsIssues() {
         var state = RepoState(seenNumber: 10, seenStars: 0, stars: 0)
-        state.update(stars: 3, openIssues: [issue(12), issue(11)])
+        state.update(stars: 3, openPulls: [issue(12), issue(4)], openIssues: [issue(11)])
         state.markSeen()
         #expect(state.newCount == 0)
         #expect(state.seenNumber == 12)
-        state.update(stars: 3, openIssues: [issue(12), issue(11)])
+        #expect(state.items.map(\.number) == [12, 4])
+        state.update(stars: 3, openPulls: [issue(12), issue(4)], openIssues: [issue(11)])
+        #expect(state.items.map(\.number) == [12, 4])
         #expect(state.newCount == 0)
     }
 
     @Test func unstarsDoNotMaskLaterStars() {
         var state = RepoState(seenNumber: 0, seenStars: 10, stars: 10)
-        state.update(stars: 8, openIssues: [])
+        state.update(stars: 8, openPulls: [], openIssues: [])
         #expect(state.newStars == 0)
-        state.update(stars: 9, openIssues: [])
+        state.update(stars: 9, openPulls: [], openIssues: [])
         #expect(state.newStars == 1)
+    }
+
+    @Test func persistsOnlyBaselines() throws {
+        // Older versions also saved a "new" list; it must not break decoding.
+        let saved = Data(#"{"seenNumber":12,"seenStars":3,"stars":4,"new":[]}"#.utf8)
+        var state = try JSONDecoder().decode(RepoState.self, from: saved)
+        #expect(state == RepoState(seenNumber: 12, seenStars: 3, stars: 4))
+
+        state.update(stars: 4, openPulls: [issue(13)], openIssues: [])
+        let roundTripped = try JSONDecoder().decode(RepoState.self, from: JSONEncoder().encode(state))
+        #expect(roundTripped.items.isEmpty)
+        #expect(roundTripped.seenNumber == 12)
     }
 }

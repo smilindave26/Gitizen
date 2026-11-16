@@ -4,7 +4,8 @@ struct RepoInfo: Decodable, Sendable {
     let stargazersCount: Int
 }
 
-/// An entry from the issues endpoint, which returns both issues and PRs.
+/// An issue or PR from the issues or pulls endpoint. The issues endpoint
+/// returns PRs too, and marks them with `pullRequest`.
 struct IssueDTO: Decodable, Sendable {
     struct PullRequestRef: Decodable, Sendable {}
 

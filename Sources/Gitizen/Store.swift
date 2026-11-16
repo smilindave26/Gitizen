@@ -2,7 +2,7 @@ import Foundation
 import Observation
 import ServiceManagement
 
-struct Item: Codable, Hashable, Identifiable {
+struct Item: Hashable, Identifiable {
     let number: Int
     let title: String
     let url: URL
@@ -12,32 +12,41 @@ struct Item: Codable, Hashable, Identifiable {
 }
 
 struct RepoState: Codable, Equatable {
-    /// Highest issue/PR number the user has already seen.
+    /// Highest issue/PR number the user has already seen. Issues and PRs
+    /// share one number sequence, so anything numbered above this is new.
     var seenNumber: Int
     var seenStars: Int
     var stars: Int
-    var new: [Item] = []
+    /// All open PRs plus new open issues, newest first. Rebuilt on every
+    /// fetch, so it isn't persisted.
+    var items: [Item] = []
+
+    private enum CodingKeys: String, CodingKey {
+        case seenNumber, seenStars, stars
+    }
 
     var newStars: Int { max(0, stars - seenStars) }
-    var newCount: Int { new.count + newStars }
+    var newCount: Int { items.count(where: isNew) + newStars }
 
-    /// Rebuilds the state from a fresh fetch of open issues and PRs, so closed
-    /// and merged items drop out. Issues and PRs share one number sequence,
-    /// so anything numbered above `seenNumber` is new.
-    mutating func update(stars: Int, openIssues: [IssueDTO]) {
+    func isNew(_ item: Item) -> Bool { item.number > seenNumber }
+
+    /// Rebuilds the items from a fresh fetch, so closed and merged ones drop out.
+    /// `openIssues` comes from the issues endpoint, which also returns PRs.
+    mutating func update(stars: Int, openPulls: [IssueDTO], openIssues: [IssueDTO]) {
         self.stars = stars
         // Unstars lower the baseline so they don't mask later stars.
         seenStars = min(seenStars, stars)
-        new = openIssues
-            .filter { $0.number > seenNumber }
-            .map { Item(number: $0.number, title: $0.title, url: $0.htmlUrl, isPR: $0.pullRequest != nil) }
-            .sorted { $0.number > $1.number }
+        let pulls = openPulls.map { Item(number: $0.number, title: $0.title, url: $0.htmlUrl, isPR: true) }
+        let issues = openIssues
+            .filter { $0.pullRequest == nil && $0.number > seenNumber }
+            .map { Item(number: $0.number, title: $0.title, url: $0.htmlUrl, isPR: false) }
+        items = (pulls + issues).sorted { $0.number > $1.number }
     }
 
     mutating func markSeen() {
-        seenNumber = max(seenNumber, new.first?.number ?? 0)
+        seenNumber = max(seenNumber, items.first?.number ?? 0)
         seenStars = stars
-        new = []
+        items.removeAll { !$0.isPR }
     }
 }
 
@@ -139,14 +148,15 @@ final class Store {
         for repo in targets {
             do {
                 async let info: RepoInfo = api.get("repos/\(repo)")
+                async let pulls: [IssueDTO] = api.get("repos/\(repo)/pulls?state=open&per_page=100")
                 async let issues: [IssueDTO] = api.get(
                     "repos/\(repo)/issues?state=open&sort=created&direction=desc&per_page=50")
-                let (stars, open) = try await (info.stargazersCount, issues)
+                let (stars, openPulls, openIssues) = try await (info.stargazersCount, pulls, issues)
 
                 guard repos.contains(repo) else { continue } // removed mid-fetch
-                var state = states[repo] ?? RepoState(
-                    seenNumber: open.map(\.number).max() ?? 0, seenStars: stars, stars: stars)
-                state.update(stars: stars, openIssues: open)
+                let newest = (openPulls + openIssues).map(\.number).max() ?? 0
+                var state = states[repo] ?? RepoState(seenNumber: newest, seenStars: stars, stars: stars)
+                state.update(stars: stars, openPulls: openPulls, openIssues: openIssues)
                 states[repo] = state
             } catch {
                 firstError = firstError ?? "\(repo): \(error.localizedDescription)"
