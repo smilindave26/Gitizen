@@ -21,17 +21,17 @@ struct RepoState: Codable, Equatable {
     var newStars: Int { max(0, stars - seenStars) }
     var newCount: Int { new.count + newStars }
 
-    /// Folds a fresh fetch into the state. Issues and PRs share one number
-    /// sequence, so anything numbered above `seenNumber` is new.
-    mutating func update(stars: Int, issues: [IssueDTO]) {
+    /// Rebuilds the state from a fresh fetch of open issues and PRs, so closed
+    /// and merged items drop out. Issues and PRs share one number sequence,
+    /// so anything numbered above `seenNumber` is new.
+    mutating func update(stars: Int, openIssues: [IssueDTO]) {
         self.stars = stars
         // Unstars lower the baseline so they don't mask later stars.
         seenStars = min(seenStars, stars)
-        let known = Set(new.map(\.number))
-        let fresh = issues
-            .filter { $0.number > seenNumber && !known.contains($0.number) }
+        new = openIssues
+            .filter { $0.number > seenNumber }
             .map { Item(number: $0.number, title: $0.title, url: $0.htmlUrl, isPR: $0.pullRequest != nil) }
-        new = (fresh + new).sorted { $0.number > $1.number }
+            .sorted { $0.number > $1.number }
     }
 
     mutating func markSeen() {
@@ -140,13 +140,13 @@ final class Store {
             do {
                 async let info: RepoInfo = api.get("repos/\(repo)")
                 async let issues: [IssueDTO] = api.get(
-                    "repos/\(repo)/issues?state=all&sort=created&direction=desc&per_page=50")
-                let (stars, list) = try await (info.stargazersCount, issues)
+                    "repos/\(repo)/issues?state=open&sort=created&direction=desc&per_page=50")
+                let (stars, open) = try await (info.stargazersCount, issues)
 
                 guard repos.contains(repo) else { continue } // removed mid-fetch
                 var state = states[repo] ?? RepoState(
-                    seenNumber: list.map(\.number).max() ?? 0, seenStars: stars, stars: stars)
-                state.update(stars: stars, issues: list)
+                    seenNumber: open.map(\.number).max() ?? 0, seenStars: stars, stars: stars)
+                state.update(stars: stars, openIssues: open)
                 states[repo] = state
             } catch {
                 firstError = firstError ?? "\(repo): \(error.localizedDescription)"

@@ -3,7 +3,7 @@
 A tiny macOS menu bar app that watches GitHub repos for new PRs, issues, and stars.
 
 - The bell shows a count of new things across all watched repos.
-- Click it to see what's new per repo. Click an item to open it on GitHub.
+- Click it to see what's new and still open per repo. Click an item to open it on GitHub.
 - "Mark All Seen" resets the count.
 - Checks every 5 minutes (or hit refresh).
 
