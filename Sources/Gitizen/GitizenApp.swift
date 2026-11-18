@@ -22,7 +22,10 @@ struct ContentView: View {
     let store: Store
     @State private var newRepo = ""
     @State private var listHeight: CGFloat = 0
+    @State private var expanded: Set<String> = []
     @Environment(\.openURL) private var openURL
+
+    private static let collapsedLimit = 3
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -115,7 +118,11 @@ struct ContentView: View {
                 .foregroundStyle(.tertiary)
                 .help("Stop watching")
             }
-            ForEach(state?.items ?? []) { item in
+            // New items have the highest numbers, so they sort first and survive the cap.
+            let items = state?.items ?? []
+            let isExpanded = expanded.contains(repo)
+            let hidden = isExpanded ? 0 : max(0, items.count - Self.collapsedLimit)
+            ForEach(items.dropLast(hidden)) { item in
                 let isNew = state?.isNew(item) ?? false
                 Button {
                     openURL(item.url)
@@ -139,6 +146,19 @@ struct ContentView: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
+                .padding(.leading, 8)
+            }
+            if items.count > Self.collapsedLimit {
+                Button(isExpanded ? "Show less" : "\(hidden) more…") {
+                    if isExpanded {
+                        expanded.remove(repo)
+                    } else {
+                        expanded.insert(repo)
+                    }
+                }
+                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 .padding(.leading, 8)
             }
         }
